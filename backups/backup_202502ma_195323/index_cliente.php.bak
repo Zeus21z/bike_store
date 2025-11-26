@@ -1,0 +1,160 @@
+<?php include("bd.php");
+if (session_status() === PHP_SESSION_NONE) { session_start(); }
+?>
+<?php include("templates/header_cliente.php"); ?>
+
+<!-- Carrusel de productos destacados -->
+<?php
+// Obtener 5 productos destacados (con imagen)
+$stmt_productos_destacados = $conexion->prepare("SELECT * FROM productos WHERE foto IS NOT NULL AND foto != '' ORDER BY create_date DESC LIMIT 5");
+$stmt_productos_destacados->execute();
+$productos_destacados = $stmt_productos_destacados->fetchAll(PDO::FETCH_ASSOC);
+?>
+
+<div id="carouselProductos" class="carousel slide mb-5" data-bs-ride="carousel">
+    <div class="carousel-indicators">
+        <?php foreach($productos_destacados as $index => $producto): ?>
+        <button type="button" data-bs-target="#carouselProductos" data-bs-slide-to="<?php echo $index; ?>" class="<?php echo $index === 0 ? 'active' : ''; ?>" aria-current="<?php echo $index === 0 ? 'true' : 'false'; ?>"></button>
+        <?php endforeach; ?>
+    </div>
+    <div class="carousel-inner">
+        <?php foreach($productos_destacados as $index => $producto): ?>
+        <div class="carousel-item <?php echo $index === 0 ? 'active' : ''; ?>">
+            <div class="d-block w-100 bg-light" style="height: 400px; display: flex; align-items: center; justify-content: center;">
+                <?php if(!empty($producto['foto'])): ?>
+                <img src="secciones/Productos/img/<?php echo htmlspecialchars($producto['foto']); ?>" class="d-block mx-auto" style="max-height: 400px; object-fit: contain;" alt="<?php echo htmlspecialchars($producto['product_name']); ?>">
+                <?php else: ?>
+                <div class="text-center p-5">
+                    <i class="bi bi-bicycle" style="font-size: 150px; color: #ccc;"></i>
+                </div>
+                <?php endif; ?>
+            </div>
+            <div class="carousel-caption d-none d-md-block bg-dark bg-opacity-75 p-3 rounded">
+                <h5><?php echo htmlspecialchars($producto['product_name']); ?></h5>
+                <p>Año <?php echo htmlspecialchars($producto['model_year']); ?> - $<?php echo number_format($producto['price'], 2); ?></p>
+            </div>
+        </div>
+        <?php endforeach; ?>
+    </div>
+    <button class="carousel-control-prev" type="button" data-bs-target="#carouselProductos" data-bs-slide="prev">
+        <span class="carousel-control-prev-icon" aria-hidden="true"></span>
+        <span class="visually-hidden">Anterior</span>
+    </button>
+    <button class="carousel-control-next" type="button" data-bs-target="#carouselProductos" data-bs-slide="next">
+        <span class="carousel-control-next-icon" aria-hidden="true"></span>
+        <span class="visually-hidden">Siguiente</span>
+    </button>
+</div>
+
+<!-- Productos más vendidos por categoría -->
+<?php
+// Obtener todas las categorías
+$stmt_categorias = $conexion->prepare("SELECT * FROM categorias ORDER BY descripcion ASC");
+$stmt_categorias->execute();
+$categorias = $stmt_categorias->fetchAll(PDO::FETCH_ASSOC);
+
+foreach($categorias as $categoria):
+    // Obtener productos más vendidos de esta categoría
+    $stmt_mas_vendidos = $conexion->prepare("
+        SELECT p.*, SUM(dp.cantidad) as total_vendido
+        FROM productos p
+        INNER JOIN detalles_pedido dp ON p.product_id = dp.producto_id
+        WHERE p.category_id = :category_id
+        GROUP BY p.product_id
+        ORDER BY total_vendido DESC
+        LIMIT 4
+    ");
+    $stmt_mas_vendidos->execute([':category_id' => $categoria['category_id']]);
+    $mas_vendidos = $stmt_mas_vendidos->fetchAll(PDO::FETCH_ASSOC);
+    
+    if(!empty($mas_vendidos)):
+?>
+<div class="container mb-5">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h2><?php echo htmlspecialchars($categoria['descripcion']); ?> - Más Vendidos</h2>
+        <a href="productos_por_categoria.php?categoria_id=<?php echo $categoria['category_id']; ?>" class="btn btn-outline-primary">
+            Ver todos los productos
+        </a>
+    </div>
+    
+    <div class="row">
+        <?php foreach($mas_vendidos as $producto): ?>
+        <div class="col-md-3 mb-4">
+            <div class="card h-100 shadow-sm">
+                <?php if(!empty($producto['foto'])): ?>
+                <img src="secciones/Productos/img/<?php echo htmlspecialchars($producto['foto']); ?>" class="card-img-top" style="height: 200px; object-fit: contain; padding: 10px;" alt="<?php echo htmlspecialchars($producto['product_name']); ?>">
+                <?php else: ?>
+                <div class="card-img-top bg-light d-flex align-items-center justify-content-center" style="height: 200px;">
+                    <i class="bi bi-bicycle" style="font-size: 80px; color: #ccc;"></i>
+                </div>
+                <?php endif; ?>
+                <div class="card-body d-flex flex-column">
+                    <h5 class="card-title"><?php echo htmlspecialchars($producto['product_name']); ?></h5>
+                    <p class="card-text mb-2">Año: <?php echo htmlspecialchars($producto['model_year']); ?></p>
+                    <p class="text-success fw-bold mb-3">$<?php echo number_format($producto['price'], 2); ?></p>
+                    <button class="btn btn-primary mt-auto" onclick="agregarAlCarrito(<?php echo $producto['product_id']; ?>, '<?php echo htmlspecialchars($producto['product_name']); ?>', <?php echo $producto['price']; ?>)">
+                        <i class="bi bi-cart-plus"></i> Agregar al Carrito
+                    </button>
+                </div>
+            </div>
+        </div>
+        <?php endforeach; ?>
+    </div>
+</div>
+<?php 
+    endif;
+endforeach; 
+?>
+
+<script>
+function agregarAlCarrito(productId, productName, price) {
+    let carrito = JSON.parse(localStorage.getItem('carrito') || '[]');
+    
+    const itemExistente = carrito.findIndex(item => item.product_id === productId);
+    
+    if (itemExistente > -1) {
+        carrito[itemExistente].cantidad += 1;
+    } else {
+        carrito.push({
+            product_id: productId,
+            product_name: productName,
+            price: price,
+            cantidad: 1
+        });
+    }
+    
+    localStorage.setItem('carrito', JSON.stringify(carrito));
+    
+    // Mostrar notificación
+    const btn = event.target.closest('button');
+    const originalText = btn.innerHTML;
+    btn.innerHTML = '<i class="bi bi-check-circle-fill"></i> Agregado';
+    btn.classList.remove('btn-primary');
+    btn.classList.add('btn-success');
+    
+    setTimeout(() => {
+        btn.innerHTML = originalText;
+        btn.classList.remove('btn-success');
+        btn.classList.add('btn-primary');
+    }, 1500);
+    
+    // Actualizar contador del carrito
+    actualizarContadorCarrito();
+}
+
+function actualizarContadorCarrito() {
+    const carrito = JSON.parse(localStorage.getItem('carrito') || '[]');
+    const totalItems = carrito.reduce((sum, item) => sum + item.cantidad, 0);
+    
+    const contador = document.getElementById('carrito-contador');
+    if (contador) {
+        contador.textContent = totalItems;
+        contador.style.display = totalItems > 0 ? 'inline-block' : 'none';
+    }
+}
+
+// Actualizar contador al cargar la página
+document.addEventListener('DOMContentLoaded', actualizarContadorCarrito);
+</script>
+
+<?php include("templates/footer.php"); ?>

@@ -1,0 +1,40 @@
+================================================
+BIKE STORE - INFORMACION DEL BACKUP
+================================================
+
+Fecha: mar 25/11/2025
+Hora: 19:53:24,47
+Usuario: zeus.villarroel
+Computadora: PCLAB401
+
+Directorio del proyecto: C:\xampp\htdocs\bike_store
+Directorio del backup: C:\xampp\htdocs\bike_store\backups\backup_202502ma_195323
+
+================================================
+ARCHIVOS RESPALDADOS:
+================================================
+
+backup_info.txt
+bd.php.bak
+carrito.php.bak
+enviar_factura_email.php.bak
+factura.php.bak
+generar_factura_pdf.php.bak
+index.php.bak
+index_admin.php.bak
+index_cliente.php.bak
+login.php.bak
+procesar_pago.php.bak
+secciones
+templates
+zeta_database.sql
+
+================================================
+NOTAS:
+================================================
+- Este backup fue creado automaticamente
+- Los archivos .bak son copias exactas de los originales
+- El archivo .sql contiene el backup de la base de datos
+- Para restaurar, copie los archivos .bak al directorio principal
+  y quite la extension .bak
+

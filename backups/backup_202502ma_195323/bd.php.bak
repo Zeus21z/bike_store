@@ -1,0 +1,230 @@
+<?php
+
+
+// Cargar configuración centralizada
+require_once(__DIR__ . '/config.php');
+
+// Variable global de conexión
+$conexion = null;
+
+try {
+    // Crear DSN (Data Source Name)
+    $dsn = sprintf(
+        "mysql:host=%s;dbname=%s;charset=%s",
+        DB_HOST,
+        DB_NAME,
+        DB_CHARSET
+    );
+    
+    // Opciones de PDO optimizadas
+    $options = [
+        // Modo de errores: lanzar excepciones
+        PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
+        
+        // Modo de fetch por defecto: array asociativo
+        PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
+        
+        // Deshabilitar emulación de prepared statements (más seguro)
+        PDO::ATTR_EMULATE_PREPARES => false,
+        
+        // Conexión persistente (mejor performance)
+        PDO::ATTR_PERSISTENT => false,
+        
+        // Timeout de conexión
+        PDO::ATTR_TIMEOUT => 5,
+        
+        // Convertir valores numéricos automáticamente
+        PDO::ATTR_STRINGIFY_FETCHES => false,
+    ];
+    
+    // Crear conexión PDO
+    $conexion = new PDO($dsn, DB_USER, DB_PASS, $options);
+    
+    // Establecer timezone de MySQL
+    $conexion->exec("SET time_zone = '-04:00'"); // Bolivia timezone
+    
+    // Log exitoso solo en desarrollo
+    if (APP_ENV === 'development') {
+        log_message('DEBUG', 'Conexión a base de datos establecida', [
+            'database' => DB_NAME,
+            'host' => DB_HOST
+        ]);
+    }
+    
+} catch (PDOException $e) {
+    // Registrar error en logs
+    log_message('ERROR', 'Error de conexión a base de datos', [
+        'error' => $e->getMessage(),
+        'code' => $e->getCode()
+    ]);
+    
+    // Mensaje diferente según entorno
+    if (APP_ENV === 'development') {
+        // En desarrollo: mostrar detalles del error
+        $error_message = sprintf(
+            "<div style='background:#f8d7da;color:#721c24;padding:20px;border:1px solid #f5c6cb;border-radius:5px;margin:20px;'>
+                <h3>❌ Error de Conexión a Base de Datos</h3>
+                <p><strong>Mensaje:</strong> %s</p>
+                <p><strong>Código:</strong> %s</p>
+                <p><strong>Archivo:</strong> %s</p>
+                <p><strong>Línea:</strong> %s</p>
+                <hr>
+                <p><strong>Soluciones posibles:</strong></p>
+                <ul>
+                    <li>Verificar que XAMPP está iniciado (Apache + MySQL)</li>
+                    <li>Verificar credenciales en config.php</li>
+                    <li>Verificar que la base de datos 'zeta' existe en phpMyAdmin</li>
+                    <li>Verificar que el usuario tiene permisos</li>
+                </ul>
+            </div>",
+            htmlspecialchars($e->getMessage()),
+            htmlspecialchars($e->getCode()),
+            htmlspecialchars($e->getFile()),
+            htmlspecialchars($e->getLine())
+        );
+    } else {
+        // En producción: mensaje genérico
+        $error_message = "
+            <div style='background:#f8d7da;color:#721c24;padding:20px;border:1px solid #f5c6cb;border-radius:5px;margin:20px;'>
+                <h3>❌ Error del Sistema</h3>
+                <p>No se pudo conectar a la base de datos. Por favor, contacte al administrador.</p>
+                <p><small>Código de error: DB_CONNECTION_FAILED</small></p>
+            </div>
+        ";
+    }
+    
+    die($error_message);
+}
+
+/**
+ * Función auxiliar para ejecutar queries con manejo de errores
+ * 
+ * @param string $sql Query SQL a ejecutar
+ * @param array $params Parámetros para prepared statement
+ * @return PDOStatement|false
+ */
+function db_query($sql, $params = []) {
+    global $conexion;
+    
+    try {
+        $stmt = $conexion->prepare($sql);
+        $stmt->execute($params);
+        return $stmt;
+    } catch (PDOException $e) {
+        log_message('ERROR', 'Error en query de base de datos', [
+            'sql' => $sql,
+            'params' => $params,
+            'error' => $e->getMessage()
+        ]);
+        
+        if (APP_ENV === 'development') {
+            throw $e; // Re-lanzar en desarrollo
+        }
+        
+        return false;
+    }
+}
+
+/**
+ * Función auxiliar para obtener un solo registro
+ * 
+ * @param string $sql Query SQL
+ * @param array $params Parámetros
+ * @return array|false
+ */
+function db_fetch_one($sql, $params = []) {
+    $stmt = db_query($sql, $params);
+    return $stmt ? $stmt->fetch(PDO::FETCH_ASSOC) : false;
+}
+
+/**
+ * Función auxiliar para obtener múltiples registros
+ * 
+ * @param string $sql Query SQL
+ * @param array $params Parámetros
+ * @return array
+ */
+function db_fetch_all($sql, $params = []) {
+    $stmt = db_query($sql, $params);
+    return $stmt ? $stmt->fetchAll(PDO::FETCH_ASSOC) : [];
+}
+
+/**
+ * Función auxiliar para inserts que retorna el ID insertado
+ * 
+ * @param string $sql Query SQL
+ * @param array $params Parámetros
+ * @return int|false ID del registro insertado o false en error
+ */
+function db_insert($sql, $params = []) {
+    global $conexion;
+    
+    $stmt = db_query($sql, $params);
+    return $stmt ? $conexion->lastInsertId() : false;
+}
+
+/**
+ * Iniciar transacción
+ */
+function db_begin_transaction() {
+    global $conexion;
+    return $conexion->beginTransaction();
+}
+
+/**
+ * Confirmar transacción
+ */
+function db_commit() {
+    global $conexion;
+    return $conexion->commit();
+}
+
+/**
+ * Revertir transacción
+ */
+function db_rollback() {
+    global $conexion;
+    return $conexion->rollBack();
+}
+
+/**
+ * Verificar si estamos en una transacción
+ */
+function db_in_transaction() {
+    global $conexion;
+    return $conexion->inTransaction();
+}
+
+/**
+ * Cerrar conexión (se hace automáticamente al finalizar script)
+ */
+function db_close() {
+    global $conexion;
+    $conexion = null;
+}
+
+// ============================================
+// INICIAR SESIÓN DE FORMA SEGURA
+// ============================================
+if (session_status() === PHP_SESSION_NONE) {
+    session_start();
+    
+    // Regenerar ID de sesión periódicamente (seguridad)
+    if (!isset($_SESSION['last_regeneration'])) {
+        $_SESSION['last_regeneration'] = time();
+    } elseif (time() - $_SESSION['last_regeneration'] > 300) { // cada 5 minutos
+        session_regenerate_id(true);
+        $_SESSION['last_regeneration'] = time();
+    }
+}
+
+// ============================================
+// DEFINIR URL BASE DEL PROYECTO
+// ============================================
+$url_base = APP_URL;
+
+// ============================================
+// MENSAJE DE ÉXITO (solo en modo debug extremo)
+// ============================================
+// Descomentar la siguiente línea solo para debugging:
+// echo "<!-- Conexión BD OK: " . DB_NAME . " -->";

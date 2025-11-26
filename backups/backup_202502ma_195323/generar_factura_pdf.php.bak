@@ -1,0 +1,161 @@
+<?php
+include("bd.php");
+require_once('libs/tcpdf/tcpdf.php');
+
+if (session_status() === PHP_SESSION_NONE) {
+    session_start();
+}
+
+$pedido_id = $_GET['pedido_id'] ?? 0;
+
+// Obtener información del pedido
+$stmt_pedido = $conexion->prepare("
+    SELECT p.*, c.nombre, c.apellido, c.correo, c.telefono 
+    FROM pedidos p 
+    INNER JOIN clientes c ON p.cliente_id = c.cliente_id 
+    WHERE p.pedido_id = :pedido_id
+");
+$stmt_pedido->execute([':pedido_id' => $pedido_id]);
+$pedido = $stmt_pedido->fetch(PDO::FETCH_ASSOC);
+
+// Obtener detalles del pedido
+$stmt_detalles = $conexion->prepare("
+    SELECT dp.*, pr.product_name 
+    FROM detalles_pedido dp 
+    INNER JOIN productos pr ON dp.producto_id = pr.product_id 
+    WHERE dp.pedido_id = :pedido_id
+");
+$stmt_detalles->execute([':pedido_id' => $pedido_id]);
+$detalles = $stmt_detalles->fetchAll(PDO::FETCH_ASSOC);
+
+// Obtener información de pago
+$stmt_pago = $conexion->prepare("
+    SELECT * FROM pagos WHERE pedido_id = :pedido_id
+");
+$stmt_pago->execute([':pedido_id' => $pedido_id]);
+$pago = $stmt_pago->fetch(PDO::FETCH_ASSOC);
+
+// Crear nuevo PDF
+$pdf = new TCPDF('P', PDF_UNIT, 'A4', true, 'UTF-8', false);
+
+// Información del documento
+$pdf->SetCreator('Bike Store');
+$pdf->SetAuthor('Bike Store');
+$pdf->SetTitle('Factura #' . $pedido_id);
+$pdf->SetSubject('Factura de Venta');
+
+// Configurar márgenes
+$pdf->SetMargins(15, 25, 15);
+$pdf->SetHeaderMargin(5);
+$pdf->SetFooterMargin(10);
+$pdf->SetAutoPageBreak(TRUE, 15);
+
+// Agregar página
+$pdf->AddPage();
+
+// Encabezado
+$pdf->SetFont('helvetica', 'B', 20);
+$pdf->Cell(0, 10, 'BIKE STORE', 0, 1, 'C');
+$pdf->SetFont('helvetica', '', 12);
+$pdf->Cell(0, 5, 'Factura de Venta', 0, 1, 'C');
+$pdf->Ln(5);
+
+// Información del pedido
+$pdf->SetFont('helvetica', 'B', 12);
+$pdf->Cell(95, 8, 'INFORMACIÓN DEL PEDIDO', 0, 0, 'L');
+$pdf->Cell(95, 8, 'INFORMACIÓN DEL CLIENTE', 0, 1, 'L');
+$pdf->SetFont('helvetica', '', 10);
+
+$pdf->Cell(95, 6, 'Pedido #: ' . str_pad($pedido_id, 6, '0', STR_PAD_LEFT), 0, 0, 'L');
+$pdf->Cell(95, 6, 'Cliente: ' . htmlspecialchars($pedido['nombre'] . ' ' . $pedido['apellido']), 0, 1, 'L');
+
+$pdf->Cell(95, 6, 'Fecha: ' . date('d/m/Y', strtotime($pedido['fecha_pedido'])), 0, 0, 'L');
+$pdf->Cell(95, 6, 'Teléfono: ' . htmlspecialchars($pedido['telefono']), 0, 1, 'L');
+
+$pdf->Cell(95, 6, 'Método de Pago: ' . htmlspecialchars($pago['metodo_pago']), 0, 0, 'L');
+$pdf->Cell(95, 6, 'Email: ' . htmlspecialchars($pedido['correo']), 0, 1, 'L');
+
+$pdf->Ln(5);
+
+// Detalles del pedido
+$html = '
+<style>
+    table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 10px;
+        font-family: helvetica;
+    }
+    th {
+        background-color: #4a6572;
+        color: white;
+        font-weight: bold;
+        padding: 8px;
+        border: 1px solid #344955;
+        text-align: center;
+    }
+    td {
+        padding: 6px;
+        border: 1px solid #dddddd;
+        text-align: left;
+    }
+    tr:nth-child(even) {
+        background-color: #f8f9fa;
+    }
+    .centrado {
+        text-align: center;
+    }
+    .derecha {
+        text-align: right;
+    }
+</style>
+
+<table>
+    <thead>
+        <tr>
+            <th style="width: 20%;">Producto</th>
+            <th style="width: 20%;">Cantidad</th>
+            <th style="width: 20%;" class="derecha">Precio Unit.</th>
+            <th style="width: 20%;" class="centrado">Descuento</th>
+            <th style="width: 20%;" class="derecha">Subtotal</th>
+        </tr>
+    </thead>
+    <tbody>';
+
+$total = 0;
+foreach ($detalles as $detalle) {
+    $subtotal = $detalle['precio'] * $detalle['cantidad'];
+    $descuento = ($subtotal * $detalle['descuento']) / 100;
+    $subtotal_final = $subtotal - $descuento;
+    $total += $subtotal_final;
+
+    $html .= '
+        <tr>
+            <td>' . htmlspecialchars($detalle['product_name']) . '</td>
+            <td class="centrado">' . $detalle['cantidad'] . '</td>
+            <td class="derecha">$' . number_format($detalle['precio'], 2) . '</td>
+            <td class="centrado">' . $detalle['descuento'] . '%</td>
+            <td class="derecha">$' . number_format($subtotal_final, 2) . '</td>
+        </tr>';
+}
+
+$html .= '
+    </tbody>
+    <tfoot>
+        <tr>
+            <td colspan="4" style="text-align: right; font-weight: bold;">Total:</td>
+            <td style="text-align: right; font-weight: bold;">$' . number_format($total, 2) . '</td>
+        </tr>
+    </tfoot>
+</table>';
+
+// Escribir contenido HTML
+$pdf->writeHTML($html, true, false, true, false, '');
+
+// Pie de página
+$pdf->SetY(-15);
+$pdf->SetFont('helvetica', 'I', 9);
+$pdf->Cell(0, 10, 'Gracias por su compra Ʌ-Ʌ| Bike Store - Página ' . $pdf->getAliasNumPage() . ' de ' . $pdf->getAliasNbPages(), 0, false, 'C', 0, '', 0, false, 'T', 'M');
+
+// Salida del PDF
+$pdf->Output('factura_' . str_pad($pedido_id, 6, '0', STR_PAD_LEFT) . '.pdf', 'I');

@@ -1,0 +1,149 @@
+<?php include("bd.php");
+if (session_status() === PHP_SESSION_NONE) { session_start(); }
+
+$error = "";
+// Si ya está logueado, redirigir según tipo de usuario
+if (isset($_SESSION['usuario'])) {
+    $tipo_usuario = $_SESSION['tipo_usuario'] ?? 'admin';
+    if ($tipo_usuario === 'cliente') {
+        header("Location: index_cliente.php");
+    } else {
+        header("Location: index_admin.php");
+    }
+    exit;
+}
+
+// Procesar login
+if($_POST){
+    $usuario=(isset($_POST['usuario'])?trim($_POST['usuario']):'');
+    $contrasenia=(isset($_POST['contrasenia'])?$_POST['contrasenia']:'');
+    $recordar=isset($_POST['recordar']);
+    $tipo_login=(isset($_POST['tipo_login'])?$_POST['tipo_login']:'admin');
+
+    if($tipo_login === 'cliente'){
+        // Login para clientes - solo con nombre
+        $stmt=$conexion->prepare("SELECT * FROM clientes WHERE CONCAT(nombre, ' ', apellido) LIKE :u OR nombre LIKE :u LIMIT 1");
+        $stmt=$pdo->prepare("SELECT * FROM clientes WHERE CONCAT(nombre, ' ', apellido) LIKE :u OR nombre LIKE :u LIMIT 1");
+        $stmt->bindParam(":u", $usuario);
+        $stmt->execute();
+        $cliente=$stmt->fetch(PDO::FETCH_ASSOC);
+
+        if($cliente){
+            $_SESSION['usuario'] = $cliente['nombre'] . ' ' . $cliente['apellido'];
+            $_SESSION['tipo_usuario'] = 'cliente';
+            $_SESSION['cliente_id'] = $cliente['cliente_id'];
+            $_SESSION['correo'] = $cliente['correo'];
+            if($recordar){
+                setcookie('usuario', $usuario, time()+60*60*24*30, '/');
+            } else {
+                setcookie('usuario', '', time()-3600, '/');
+            }
+            header("Location: index_cliente.php");
+            exit;
+        } else {
+            $error = "Cliente no encontrado";
+        }
+    } else {
+        // Login para administradores - usuario y contraseña
+        $stmt=$conexion->prepare("SELECT * FROM usuarios WHERE usuario=:u LIMIT 1");
+        $stmt=$pdo->prepare("SELECT * FROM usuarios WHERE usuario=:u LIMIT 1");
+        $stmt->bindParam(":u", $usuario);
+        $stmt->execute();
+        $user=$stmt->fetch(PDO::FETCH_ASSOC);
+
+        if($user){
+            // Comparación directa; si manejas hash usa password_verify($contrasenia, $user['password'])
+            $valida = isset($user['password']) ? ($contrasenia === $user['password']) : false;
+            if($valida){
+                $_SESSION['usuario'] = $user['usuario'];
+                $_SESSION['tipo_usuario'] = 'admin';
+                if($recordar){
+                    setcookie('usuario', $usuario, time()+60*60*24*30, '/');
+                } else {
+                    setcookie('usuario', '', time()-3600, '/');
+                }
+                header("Location: index_admin.php");
+                exit;
+            }
+        }
+        $error = "Usuario o contraseña incorrectos";
+    }
+}
+?>
+<?php include("templates/header.php");?>
+<div class="d-flex align-items-center justify-content-center" style="min-height:80vh;">
+    <div class="card shadow-sm" style="max-width:420px;width:100%;">
+        <div class="card-body p-4">
+            <h4 class="mb-3 text-center">Iniciar sesión</h4>
+            <?php if(!empty($error)) { ?>
+                <div class="alert alert-danger" role="alert"><?php echo $error; ?></div>
+            <?php } ?>
+            <form method="post" id="loginForm">
+                <div class="mb-3">
+                    <label class="form-label">Tipo de acceso</label>
+                    <div class="btn-group w-100" role="group">
+                        <input type="radio" class="btn-check" name="tipo_login" id="admin" value="admin" checked>
+                        <label class="btn btn-outline-primary" for="admin">Administrador</label>
+                        
+                        <input type="radio" class="btn-check" name="tipo_login" id="cliente" value="cliente">
+                        <label class="btn btn-outline-success" for="cliente">Cliente</label>
+                    </div>
+                </div>
+                
+                <div class="mb-3">
+                    <label for="usuario" class="form-label" id="usuarioLabel">Usuario</label>
+                    <input type="text" class="form-control" id="usuario" name="usuario" placeholder="Tu usuario" value="<?php echo isset($_COOKIE['usuario'])?htmlspecialchars($_COOKIE['usuario']):''; ?>" required>
+                </div>
+                
+                <div class="mb-3" id="passwordField">
+                    <label for="contrasenia" class="form-label">Contraseña</label>
+                    <input type="password" class="form-control" id="contrasenia" name="contrasenia" placeholder="*******">
+                </div>
+                
+                <div class="form-check mb-3">
+                    <input class="form-check-input" type="checkbox" value="1" id="recordar" name="recordar" <?php echo isset($_COOKIE['usuario'])?'checked':''; ?>>
+                    <label class="form-check-label" for="recordar">
+                        Recordar usuario
+                    </label>
+                </div>
+                <div class="d-grid">
+                    <button type="submit" class="btn btn-primary">Ingresar</button>
+                </div>
+            </form>
+            
+            <script>
+                document.addEventListener('DOMContentLoaded', function() {
+                    const adminRadio = document.getElementById('admin');
+                    const clienteRadio = document.getElementById('cliente');
+                    const passwordField = document.getElementById('passwordField');
+                    const passwordInput = document.getElementById('contrasenia');
+                    const usuarioLabel = document.getElementById('usuarioLabel');
+                    const usuarioInput = document.getElementById('usuario');
+                    
+                    function togglePasswordField() {
+                        if (clienteRadio.checked) {
+                            passwordField.style.display = 'none';
+                            passwordInput.removeAttribute('required');
+                            usuarioLabel.textContent = 'Nombre completo';
+                            usuarioInput.placeholder = 'Ej: Juan Pérez';
+                        } else {
+                            passwordField.style.display = 'block';
+                            passwordInput.setAttribute('required', 'required');
+                            usuarioLabel.textContent = 'Usuario';
+                            usuarioInput.placeholder = 'Tu usuario';
+                        }
+                    }
+                    
+                    adminRadio.addEventListener('change', togglePasswordField);
+                    clienteRadio.addEventListener('change', togglePasswordField);
+                    
+                    // Inicializar estado
+                    togglePasswordField();
+                });
+            </script>
+        </div>
+    </div>
+    
+</div>
+<?php include("templates/footer.php");?>
+

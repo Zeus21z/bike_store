@@ -1,0 +1,248 @@
+<?php include("bd.php");
+if (session_status() === PHP_SESSION_NONE) {
+    session_start();
+}
+?>
+<?php include("templates/header_cliente.php"); ?>
+
+<div class="container">
+    <h1 class="mb-4">Carrito de Compras</h1>
+
+    <div id="carrito-container">
+        <div class="alert alert-info" role="alert">
+            Tu carrito está vacío. <a href="<?php echo $url_base; ?>productos_categoria.php">Ir a Productos</a>
+        </div>
+    </div>
+
+    <!-- Formulario de pago (oculto inicialmente) -->
+    <div id="formulario-pago" style="display: none;">
+        <div class="card mt-4">
+            <div class="card-header">
+                <h4>Métodos de Pago</h4>
+            </div>
+            <div class="card-body">
+                <form id="form-checkout">
+                    <div class="mb-3">
+                        <label class="form-label">Seleccione la tienda para retirar su pedido:</label>
+                        <select class="form-select" id="tienda_id" name="tienda_id" required>
+                            <option value="">Seleccione una tienda</option>
+                            <?php
+                            $stmt_tiendas = $conexion->prepare("SELECT * FROM tiendas ORDER BY ciudad, nombre_tienda ASC");
+                            $stmt_tiendas->execute();
+                            $tiendas = $stmt_tiendas->fetchAll(PDO::FETCH_ASSOC);
+                            foreach ($tiendas as $tienda): ?>
+                                <option value="<?php echo $tienda['tienda_id']; ?>">
+                                    <?php echo htmlspecialchars($tienda['nombre_tienda']); ?> - <?php echo htmlspecialchars($tienda['ciudad']); ?>
+                                </option>
+                            <?php endforeach; ?>
+                        </select>
+                        <small class="form-text text-muted">La tienda más cercana o la que prefiera</small>
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label">Seleccione método de pago:</label>
+                        <div class="form-check">
+                            <input class="form-check-input" type="radio" name="metodo_pago" id="envio_gratis" value="Envío Gratuito" checked>
+                            <label class="form-check-label" for="envio_gratis">
+                                <strong>Envío Gratuito</strong>
+                                <small class="text-muted d-block">Tu pedido llegará gratis a tu dirección</small>
+                            </label>
+                        </div>
+                        <div class="form-check">
+                            <input class="form-check-input" type="radio" name="metodo_pago" id="qr" value="QR">
+                            <label class="form-check-label" for="qr">
+                                <strong>Carteras Electrónicas</strong>
+                                <small class="text-muted d-block">Escanee el código QR</small>
+                            </label>
+                        </div>
+                        <div class="form-check">
+                            <input class="form-check-input" type="radio" name="metodo_pago" id="debito" value="Débito Automático">
+                            <label class="form-check-label" for="debito">
+                                <strong>Débito Automático</strong>
+                                <small class="text-muted d-block">Pago automático desde su cuenta con Tarjeta</small>
+                            </label>
+                        </div>
+                        <div class="form-check">
+                            <input class="form-check-input" type="radio" name="metodo_pago" id="efectivo" value="Efectivo">
+                            <label class="form-check-label" for="efectivo">
+                                <strong>Efectivo</strong>
+                                <small class="text-muted d-block">Pague al recibir el pedido</small>
+                            </label>
+                        </div>
+                    </div>
+
+                    <div class="mb-3">
+                        <label for="direccion" class="form-label">Dirección de envío</label>
+                        <textarea class="form-control" id="direccion" name="direccion" rows="2" required></textarea>
+                    </div>
+
+                    <div class="mb-3">
+                        <label for="telefono" class="form-label">Teléfono de contacto</label>
+                        <input type="text" class="form-control" id="telefono" name="telefono" required>
+                    </div>
+
+                    <?php if (!isset($_SESSION['usuario'])): ?>
+                        <div class="mb-3">
+                            <label for="correo" class="form-label">Correo electrónico</label>
+                            <input type="email" class="form-control" id="correo" name="correo" required>
+                        </div>
+                    <?php endif; ?>
+
+                    <div class="d-grid">
+                        <button type="submit" class="btn btn-success btn-lg">
+                            <i class="bi bi-credit-card"></i> Proceder al Pago
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        mostrarCarrito();
+
+        // Manejar envío del formulario
+        document.getElementById('form-checkout').addEventListener('submit', function(e) {
+            e.preventDefault();
+            procesarPago();
+        });
+    });
+
+    function mostrarCarrito() {
+        const carrito = JSON.parse(localStorage.getItem('carrito') || '[]');
+
+        if (carrito.length === 0) {
+            return;
+        }
+
+        let html = '<div class="table-responsive"><table class="table table-hover"><thead><tr><th>Producto</th><th>Precio</th><th>Cantidad</th><th>Subtotal</th><th>Acción</th></tr></thead><tbody>';
+
+        let total = 0;
+
+        carrito.forEach((item, index) => {
+            const subtotal = item.price * item.cantidad;
+            total += subtotal;
+
+            html += `
+            <tr>
+                <td>${item.product_name}</td>
+                <td>$${item.price.toFixed(2)}</td>
+                <td>
+                    <div class="input-group" style="width: 120px;">
+                        <button class="btn btn-outline-secondary btn-sm" onclick="cambiarCantidad(${index}, -1)">-</button>
+                        <input type="number" class="form-control form-control-sm text-center" value="${item.cantidad}" readonly>
+                        <button class="btn btn-outline-secondary btn-sm" onclick="cambiarCantidad(${index}, 1)">+</button>
+                    </div>
+                </td>
+                <td>$${subtotal.toFixed(2)}</td>
+                <td><button class="btn btn-danger btn-sm" onclick="eliminarItem(${index})"><i class="bi bi-trash"></i></button></td>
+            </tr>
+        `;
+        });
+
+        html += '</tbody></table></div>';
+
+        // Mostrar total
+        html += `
+        <div class="card mt-4">
+            <div class="card-body">
+                <div class="row">
+                    <div class="col-md-6 offset-md-6">
+                        <h4 class="text-end">Total: <span class="text-success">$${total.toFixed(2)}</span></h4>
+                        <button class="btn btn-primary btn-lg w-100 mt-3" onclick="document.getElementById('formulario-pago').scrollIntoView({behavior: 'smooth'})">
+                            Proceder al Pago
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    `;
+
+        document.getElementById('carrito-container').innerHTML = html;
+
+        // Mostrar formulario de pago
+        document.getElementById('formulario-pago').style.display = 'block';
+    }
+
+    function cambiarCantidad(index, cambio) {
+        const carrito = JSON.parse(localStorage.getItem('carrito') || '[]');
+        carrito[index].cantidad += cambio;
+
+        if (carrito[index].cantidad <= 0) {
+            carrito.splice(index, 1);
+        }
+
+        localStorage.setItem('carrito', JSON.stringify(carrito));
+        mostrarCarrito();
+        actualizarContadorCarritoNav();
+    }
+
+    function eliminarItem(index) {
+        const carrito = JSON.parse(localStorage.getItem('carrito') || '[]');
+        carrito.splice(index, 1);
+        localStorage.setItem('carrito', JSON.stringify(carrito));
+        mostrarCarrito();
+        actualizarContadorCarritoNav();
+    }
+
+    function procesarPago() {
+        const carrito = JSON.parse(localStorage.getItem('carrito') || '[]');
+        const metodoPago = document.querySelector('input[name="metodo_pago"]:checked').value;
+        const tiendaId = document.getElementById('tienda_id').value;
+        const direccion = document.getElementById('direccion').value;
+        const telefono = document.getElementById('telefono').value;
+
+        if (!tiendaId) {
+            alert('Por favor seleccione una tienda');
+            return;
+        }
+
+        // Si no está logueado, tomar el correo
+        let correo = '';
+        <?php if (!isset($_SESSION['usuario'])): ?>
+            correo = document.getElementById('correo').value;
+        <?php else: ?>
+            correo = '<?php echo $_SESSION['correo'] ?? ''; ?>';
+        <?php endif; ?>
+
+        // Calcular total
+        const total = carrito.reduce((sum, item) => sum + (item.price * item.cantidad), 0);
+
+        // Crear el pedido en el servidor
+        fetch('procesar_pago.php', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    productos: carrito,
+                    tienda_id: tiendaId,
+                    metodo_pago: metodoPago,
+                    direccion: direccion,
+                    telefono: telefono,
+                    correo: correo,
+                    total: total
+                })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    // Limpiar carrito
+                    localStorage.removeItem('carrito');
+
+                    // Redirigir a la factura
+                    window.location.href = 'factura.php?pedido_id=' + data.pedido_id;
+                } else {
+                    alert('Error al procesar el pago: ' + data.message);
+                }
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                alert('Error al procesar el pago');
+            });
+    }
+</script>
+
+<?php include("templates/footer.php"); ?>

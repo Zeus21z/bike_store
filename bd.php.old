@@ -1,0 +1,131 @@
+<?php
+/**
+ * BIKE STORE - Conexión a Base de Datos
+ * Versión: 2.0 Simplificada
+ * SOLUCIÓN TEMPORAL: Funciona sin config.php
+ */
+
+// ============================================
+// CONFIGURACIÓN DIRECTA (sin config.php)
+// ============================================
+$servidor = "localhost";
+$basededatos = "zeta";
+$usuario = "root";
+$contrasenia = "";
+
+// Variable global de conexión
+$conexion = null;
+
+try {
+    // Crear DSN
+    $dsn = "mysql:host={$servidor};dbname={$basededatos};charset=utf8mb4";
+    
+    // Opciones de PDO
+    $options = [
+        PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
+        PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
+        PDO::ATTR_EMULATE_PREPARES => false,
+    ];
+    
+    // Crear conexión
+    $conexion = new PDO($dsn, $usuario, $contrasenia, $options);
+    
+    // Establecer timezone
+    $conexion->exec("SET time_zone = '-04:00'");
+    
+    // Mensaje de éxito (comentar en producción)
+    // echo "<!-- Conexión BD OK -->";
+    
+} catch (PDOException $e) {
+    die("
+        <div style='background:#f8d7da;color:#721c24;padding:20px;margin:20px;border:1px solid #f5c6cb;border-radius:5px;'>
+            <h3>❌ Error de Conexión</h3>
+            <p><strong>Mensaje:</strong> " . htmlspecialchars($e->getMessage()) . "</p>
+            <p><strong>Verificar:</strong></p>
+            <ul>
+                <li>XAMPP está iniciado (MySQL)</li>
+                <li>Base de datos 'zeta' existe</li>
+                <li>Credenciales son correctas</li>
+            </ul>
+        </div>
+    ");
+}
+
+// ============================================
+// FUNCIONES AUXILIARES
+// ============================================
+
+/**
+ * Función para logging simple
+ */
+function log_message($level, $message, $context = []) {
+    // Crear directorio de logs si no existe
+    $log_dir = __DIR__ . '/logs';
+    if (!is_dir($log_dir)) {
+        @mkdir($log_dir, 0755, true);
+    }
+    
+    $log_file = $log_dir . '/app.log';
+    $timestamp = date('Y-m-d H:i:s');
+    $context_str = !empty($context) ? json_encode($context) : '';
+    $log_entry = "[$timestamp] [$level] $message $context_str\n";
+    
+    @file_put_contents($log_file, $log_entry, FILE_APPEND);
+}
+
+/**
+ * Sanitizar entrada
+ */
+function sanitize_input($data) {
+    if (is_array($data)) {
+        return array_map('sanitize_input', $data);
+    }
+    $data = trim($data);
+    $data = stripslashes($data);
+    $data = htmlspecialchars($data, ENT_QUOTES, 'UTF-8');
+    return $data;
+}
+
+/**
+ * Función auxiliar para queries
+ */
+function db_query($sql, $params = []) {
+    global $conexion;
+    
+    try {
+        $stmt = $conexion->prepare($sql);
+        $stmt->execute($params);
+        return $stmt;
+    } catch (PDOException $e) {
+        log_message('ERROR', 'Error en query', [
+            'sql' => $sql,
+            'error' => $e->getMessage()
+        ]);
+        return false;
+    }
+}
+
+// ============================================
+// CONFIGURAR SESIONES
+// ============================================
+if (session_status() === PHP_SESSION_NONE) {
+    session_start();
+    
+    // Regenerar ID periódicamente
+    if (!isset($_SESSION['last_regeneration'])) {
+        $_SESSION['last_regeneration'] = time();
+    } elseif (time() - $_SESSION['last_regeneration'] > 300) {
+        session_regenerate_id(true);
+        $_SESSION['last_regeneration'] = time();
+    }
+}
+
+// ============================================
+// URL BASE
+// ============================================
+$url_base = "http://localhost/bike_store/";
+
+// ============================================
+// TIMEZONE
+// ============================================
+date_default_timezone_set('America/La_Paz');
